@@ -34,15 +34,15 @@ function numCircle(s,x,y,d,num,color){
 // ============== S1 TITLE ==============
 let s = p.addSlide(); s.background={color:DARK};
 dotMotif(s, 9.7, 0.4, 3.2, 26, CYAN, 0.26);
-s.addText("1ʳᵉ moitié du projet",{x:0.7,y:1.35,w:4,h:0.4,fontFace:BF,fontSize:14,bold:true,color:CYAN,
+s.addText("Projet complet — résultats finaux",{x:0.7,y:1.35,w:8,h:0.4,fontFace:BF,fontSize:14,bold:true,color:CYAN,
   isTextBox:true,margin:0,charSpacing:2});
 s.addText("Distillation de connaissances &\nrobustesse au sous-échantillonnage",
   {x:0.7,y:1.85,w:11.4,h:2.0,fontFace:HF,fontSize:40,bold:true,color:WHITE,isTextBox:true,margin:0,lineSpacingMultiple:1.02});
 s.addText("Nuages de points appliqués à l'imagerie médicale — classification de nodules (NoduleMNIST3D)",
   {x:0.7,y:4.0,w:11.0,h:0.7,fontFace:BF,fontSize:18,color:"CFE2E6",isTextBox:true,margin:0});
-s.addText("PointNet (teacher / student)  ·  Knowledge Distillation  ·  GPU (RTX 5060)",
+s.addText("PointNet (teacher / student)  ·  Knowledge Distillation  ·  5 seeds · tests appariés",
   {x:0.7,y:5.1,w:11,h:0.5,fontFace:BF,fontSize:14,color:"9FC2C8",isTextBox:true,margin:0});
-s.addNotes("Projet autour des nuages de points en imagerie médicale, focus distillation de connaissances. Sujet imposé: robustesse au sous-échantillonnage pour la classification. Ce deck couvre la première moitié: données, modèles baselines, et le protocole de robustesse.");
+s.addNotes("Projet autour des nuages de points en imagerie médicale, focus distillation de connaissances. Sujet imposé: robustesse au sous-échantillonnage pour la classification. Ce deck couvre le projet complet: données, baselines, distillation (5 variantes + teacher robuste), et une analyse critique qui réfute H1.");
 
 // ============== S2 RQ & Hypothesis ==============
 s = p.addSlide(); s.background={color:WHITE}; title(s,"Question de recherche");
@@ -116,79 +116,143 @@ s.addNotes("PointNet pour teacher et student, largeur scalable. Le choix est jus
 
 // ============== S6 Protocol ==============
 s = p.addSlide(); s.background={color:WHITE}; title(s,"Protocole — robustesse au sous-échantillonnage");
-const prot=["Entraîner sur les nuages denses (1024 points, légère augmentation par jitter)",
-  "Au test : garder un sous-ensemble aléatoire de N points du même nuage",
-  "N ∈ {1024, 512, 256, 128, 64, 32, 16} — on retire de plus en plus de points",
-  "Mesurer l'AUC à chaque N → la courbe de robustesse"];
+const prot=["Test : garder N points aléatoires, N ∈ {1024, 512, … , 16} ; AUC moyennée sur 5 tirages",
+  "Chaque configuration entraînée sur 5 seeds → moyenne ± écart-type, IC 95 % bootstrap",
+  "Comparaisons appariées (même seed = même teacher) : Δ AUC, t-test, seeds gagnées",
+  "(T, α) choisis sur la validation uniquement ; même règle de sélection pour toutes les variantes"];
 prot.forEach((t,i)=>{ const y=1.7+i*0.92; numCircle(s,0.7,y,0.6,i+1,NAVY);
-  s.addText(t,{x:1.5,y:y,w:7.4,h:0.6,valign:"middle",fontFace:BF,fontSize:15.5,color:INK,isTextBox:true,margin:0});});
-// sparsity visual: three clusters thinning
+  s.addText(t,{x:1.5,y:y,w:7.4,h:0.6,valign:"middle",fontFace:BF,fontSize:15,color:INK,isTextBox:true,margin:0});});
 const vx=[9.4,10.7,12.0], vn=[40,16,5], vlab=["1024","128","16"];
 vx.forEach((x,i)=>{ card(s,x-0.15,2.2,1.15,1.15,TINT2); dotMotif(s,x-0.05,2.3,0.9,vn[i],TEAL,0.09);
   s.addText(vlab[i]+" pts",{x:x-0.25,y:3.42,w:1.35,h:0.35,align:"center",fontFace:BF,fontSize:12,bold:true,color:MUTE,isTextBox:true,margin:0});});
 s.addText("← de plus en plus parcimonieux",{x:9.2,y:3.9,w:3.4,h:0.4,align:"center",fontFace:BF,fontSize:12,italic:true,color:CORAL,isTextBox:true,margin:0});
-s.addNotes("Protocole standard de robustesse: on construit un nuage dense fixe puis on en retire des points au test. On mesure l'AUC à chaque densité.");
+s.addText("Pourquoi : sur 310 nodules de test, l'écart-type entre seeds (≈ 0.02 AUC) est du même ordre que les effets recherchés.",
+  {x:0.6,y:5.6,w:12.1,h:0.6,fontFace:BF,fontSize:13,italic:true,color:MUTE,isTextBox:true,margin:0});
+s.addNotes("Le protocole de la première moitié a été renforcé: une seule seed ne permettait pas de conclure. 5 seeds, 5 tirages de points par densité, intervalles de confiance et tests appariés. Les hyper-paramètres de KD sont choisis sur la validation, jamais sur le test.");
 
-// ============== S7 Results chart ==============
-s = p.addSlide(); s.background={color:WHITE}; title(s,"Résultats — courbes de robustesse (AUC test)");
 const cats=["1024","512","256","128","64","32","16"];
-const teach=[0.791,0.776,0.773,0.726,0.708,0.667,0.572];
-const stud =[0.810,0.785,0.779,0.731,0.677,0.616,0.568];
-s.addChart(p.ChartType.line,[
-  {name:"Teacher (0.8M)",labels:cats,values:teach},
-  {name:"Student scratch (54k)",labels:cats,values:stud}],
-  {x:0.6,y:1.55,w:8.1,h:5.3,showTitle:false,showLegend:true,legendPos:"b",legendFontFace:BF,legendFontSize:12,
-   chartColors:[TEAL,CORAL],lineSize:3,lineDataSymbol:"circle",lineDataSymbolSize:7,
-   valAxisMinVal:0.5,valAxisMaxVal:0.85,valAxisMajorUnit:0.05,
+const chartOpts=(minV,maxV)=>({x:0.6,y:1.55,w:8.1,h:5.3,showTitle:false,showLegend:true,legendPos:"b",legendFontFace:BF,legendFontSize:11,
+   lineSize:3,lineDataSymbol:"circle",lineDataSymbolSize:7,
+   valAxisMinVal:minV,valAxisMaxVal:maxV,valAxisMajorUnit:0.05,
    catAxisTitle:"# points à l'inférence (→ plus parcimonieux)",showCatAxisTitle:true,catAxisTitleColor:MUTE,catAxisTitleFontSize:11,catAxisTitleFontFace:BF,
-   valAxisTitle:"ROC-AUC",showValAxisTitle:true,valAxisTitleColor:MUTE,valAxisTitleFontSize:11,valAxisTitleFontFace:BF,
+   valAxisTitle:"ROC-AUC (moyenne 5 seeds)",showValAxisTitle:true,valAxisTitleColor:MUTE,valAxisTitleFontSize:11,valAxisTitleFontFace:BF,
    catAxisLabelColor:MUTE,valAxisLabelColor:MUTE,catAxisLabelFontSize:11,valAxisLabelFontSize:11,
    catAxisLabelFontFace:BF,valAxisLabelFontFace:BF,
    valGridLine:{color:"E6ECEF",size:1},catGridLine:{style:"none"}});
-card(s,8.95,1.7,3.75,5.0,DARK);
-s.addText("À retenir",{x:9.2,y:1.95,w:3.3,h:0.4,fontFace:HF,fontSize:17,bold:true,color:CYAN,isTextBox:true,margin:0});
-const ins=["Les deux modèles chutent : AUC 0.80 → 0.57 quand on passe de 1024 à 16 points.",
-  "Le student (54k) égale le teacher (0.8M) à pleine densité.",
-  "Mais le teacher reste meilleur en sparsité extrême (64 pts : 0.708 vs 0.677)."];
-s.addText(ins.map(t=>({text:t,options:{bullet:{code:"2022",indent:16},breakLine:true,paraSpaceAfter:11,color:"E6F2F3"}})),
-  {x:9.3,y:2.5,w:3.25,h:4.0,fontFace:BF,fontSize:13,isTextBox:true,margin:0,lineSpacingMultiple:1.05});
-s.addNotes("Courbe de robustesse. Deux observations clés: le petit student est compétitif à pleine densité, mais le teacher se dégrade plus gracieusement en sous-échantillonnage extrême. C'est exactement ce que la KD pourrait transférer.");
+function insightCard(head,items){
+  card(s,8.95,1.7,3.75,5.0,DARK);
+  s.addText(head,{x:9.2,y:1.95,w:3.3,h:0.4,fontFace:HF,fontSize:17,bold:true,color:CYAN,isTextBox:true,margin:0});
+  s.addText(items.map(t=>({text:t,options:{bullet:{code:"2022",indent:16},breakLine:true,paraSpaceAfter:11,color:"E6F2F3"}})),
+    {x:9.3,y:2.5,w:3.25,h:4.0,fontFace:BF,fontSize:13,isTextBox:true,margin:0,lineSpacingMultiple:1.05});
+}
+const R={teacher:[0.765,0.762,0.748,0.720,0.668,0.671,0.605], teacher_aug:[0.783,0.788,0.793,0.774,0.728,0.709,0.646],
+  scratch:[0.763,0.758,0.746,0.714,0.660,0.654,0.585], aug:[0.791,0.796,0.798,0.779,0.743,0.726,0.648],
+  kd:[0.779,0.779,0.765,0.739,0.673,0.666,0.582], kd_robust:[0.793,0.795,0.795,0.778,0.740,0.726,0.643],
+  kd_robust_rt:[0.794,0.794,0.793,0.775,0.739,0.731,0.652]};
 
-// ============== S8 Critical analysis ==============
+// ============== S7 Baselines (5 seeds) ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Baselines sur 5 seeds — ce qui change");
+s.addChart(p.ChartType.line,[
+  {name:"Teacher (0.8M)",labels:cats,values:R.teacher},
+  {name:"Student scratch (54k)",labels:cats,values:R.scratch}],
+  {...chartOpts(0.55,0.85),chartColors:[TEAL,CORAL]});
+insightCard("À retenir",["1ʳᵉ moitié (1 seed) : student 0.810 vs teacher 0.791. Sur 5 seeds : 0.763 vs 0.765 → égalité.",
+  "Le student est ~3× plus instable (σ 0.028 vs 0.008).",
+  "L'avantage du teacher n'existe qu'à ≤ 32 pts (16 pts : 0.605 vs 0.585) — un signal faible à transférer."]);
+s.addNotes("Les résultats single-seed de la première moitié étaient trompeurs. Sur 5 seeds teacher et student sont à égalité à pleine densité, et le teacher n'est un peu plus robuste qu'en sparsité extrême.");
+
+// ============== S8 Variants ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Distillation — 6 variantes, une seule boucle");
+const kd=[["scratch","CE seule, nuages denses"],
+  ["aug — le témoin","CE seule, student voit un nuage sous-échantillonné (N ~ log-U[16, 1024]) — sans teacher"],
+  ["KD logit (Hinton)","α·CE + (1-α)·T²·KL(z_s/T ‖ z_t/T), teacher gelé, entrées denses"],
+  ["KD robuste","teacher voit le nuage dense, student un nuage sous-échantillonné"],
+  ["+ KD de features","+ alignement des vecteurs globaux g (projection 256 → 1024)"],
+  ["KD robuste, teacher robuste","teacher lui-même entraîné avec sous-échantillonnage"]];
+kd.forEach((k,i)=>{ const x=0.6+(i%3)*4.1, y=1.7+Math.floor(i/3)*2.35; card(s,x,y,3.9,2.1,i==1?TINT2:TINT);
+  numCircle(s,x+0.25,y+0.28,0.58,i+1,i==1?CORAL:TEAL);
+  s.addText(k[0],{x:x+1.0,y:y+0.27,w:2.8,h:0.6,valign:"middle",fontFace:HF,fontSize:15.5,bold:true,color:NAVY,isTextBox:true,margin:0});
+  s.addText(k[1],{x:x+0.3,y:y+1.0,w:3.4,h:1.0,fontFace:BF,fontSize:12.5,color:INK,isTextBox:true,margin:0,lineSpacingMultiple:1.05});});
+s.addText("Le témoin « aug » voit exactement les mêmes entrées que la KD robuste : tout écart entre les deux est attribuable au teacher.",
+  {x:0.6,y:6.5,w:12.1,h:0.5,fontFace:BF,fontSize:13,italic:true,color:MUTE,isTextBox:true,margin:0});
+s.addNotes("Toutes les variantes partagent le même code (src/kd.py). Le point méthodologique central: le témoin aug. Sans lui, impossible de séparer l'effet de la distillation de l'effet de l'augmentation par sous-échantillonnage. T=2, alpha=0.7 choisis sur la validation.");
+
+// ============== S9 Results chart ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Résultats — courbes de robustesse (AUC test)");
+s.addChart(p.ChartType.line,[
+  {name:"Teacher dense",labels:cats,values:R.teacher},
+  {name:"Scratch",labels:cats,values:R.scratch},
+  {name:"KD logit",labels:cats,values:R.kd},
+  {name:"Aug (témoin)",labels:cats,values:R.aug},
+  {name:"KD robuste",labels:cats,values:R.kd_robust}],
+  {...chartOpts(0.55,0.85),chartColors:[NAVY,"A9B6BC","8FB8C4",CORAL,CYAN]});
+insightCard("À retenir",["KD robuste ≫ scratch : +0.03 → +0.08 AUC, 5/5 seeds, p ≤ 0.01.",
+  "Mais aug (sans teacher) fait la même chose : les deux courbes se superposent.",
+  "KD logit classique : gain faible et non significatif (p ≥ 0.08)."]);
+s.addNotes("Deux groupes de courbes: les modèles entraînés sur nuages denses en bas, ceux entraînés avec sous-échantillonnage en haut. La KD robuste et le témoin aug sont indiscernables.");
+
+// ============== S10 Decisive test ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Le test décisif — KD robuste vs témoin aug");
+const st=[["+0.08","KD robuste − scratch\n(64 pts, p < 0.01, 5/5)",TEAL],["+0.08","aug − scratch\n(64 pts, p < 0.01, 5/5)",TEAL],
+  ["≈ 0","KD robuste − aug\n(|Δ| ≤ 0.004, p ≥ 0.69)",CORAL],["≈ 0","+ features − KD robuste\n(non significatif)",CORAL]];
+st.forEach((v,i)=>{ const x=0.6+i*(2.95+0.18); card(s,x,1.65,2.95,1.9,i%2?TINT2:TINT);
+  s.addText(v[0],{x:x,y:1.8,w:2.95,h:0.8,align:"center",fontFace:HF,fontSize:34,bold:true,color:v[2],isTextBox:true,margin:0});
+  s.addText(v[1],{x:x+0.15,y:2.6,w:2.65,h:0.85,align:"center",fontFace:BF,fontSize:12.5,color:MUTE,isTextBox:true,margin:0});});
+s.addText("Lecture",{x:0.6,y:3.95,w:11,h:0.4,fontFace:HF,fontSize:18,bold:true,color:NAVY,isTextBox:true,margin:0});
+const lec=["Lu seul, « KD robuste vs scratch » ressemble à un succès net de la distillation",
+  "Le témoin montre que tout le gain vient de l'entraînement sur nuages parcimonieux, pas des cibles douces du teacher",
+  "Sans ce témoin, on aurait publié un faux positif"];
+s.addText(lec.map(t=>({text:t,options:{bullet:{code:"2022",indent:18},breakLine:true,paraSpaceAfter:7}})),
+  {x:0.7,y:4.45,w:12.0,h:2.2,fontFace:BF,fontSize:15.5,color:INK,isTextBox:true,margin:0});
+s.addNotes("C'est le résultat central. La différence appariée KD robuste moins aug est nulle à toutes les densités. La robustesse vient de l'augmentation.");
+
+// ============== S11 Robust teacher ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Et avec un teacher robuste ?");
+s.addChart(p.ChartType.line,[
+  {name:"Teacher robuste (0.8M)",labels:cats,values:R.teacher_aug},
+  {name:"Aug (student 54k)",labels:cats,values:R.aug},
+  {name:"KD depuis teacher robuste",labels:cats,values:R.kd_robust_rt}],
+  {...chartOpts(0.6,0.85),chartColors:[NAVY,CORAL,CYAN]});
+insightCard("À retenir",["Le teacher entraîné avec sous-échantillonnage reste sous le student aug (0/5 seeds gagnées à 64 pts).",
+  "KD depuis lui − aug ≈ 0 (p ≥ 0.45).",
+  "Plus de poids au teacher (α = 0.3) dégrade le student (−0.022 à 16 pts, p = 0.02)."]);
+s.addNotes("Hypothèse testée: le teacher dense n'avait pas de robustesse à transmettre. On l'a donc rendu robuste. Résultat: il reste moins bon que le petit modèle augmenté — 1158 nodules ne suffisent pas à exploiter 0.8M paramètres. La KD ne peut transférer que ce que le teacher sait de plus.");
+
+// ============== S12 Critical analysis ==============
 s = p.addSlide(); s.background={color:WHITE}; title(s,"Analyse critique");
-const find=[["Le phénomène est réel","L'AUC chute de ~0.80 (1024 pts) à ~0.57 (16 pts) pour les deux modèles — terrain de jeu idéal pour la KD.",TEAL],
-  ["Surprise honnête","Le student 54k égale/dépasse le teacher 0.8M à pleine densité : dataset petit & difficile, la capacité du teacher n'aide pas (sur-apprentissage).",CORAL],
-  ["Le vrai signal pour la KD","Le teacher se dégrade plus gracieusement en sparsité extrême. On recadre H1 : la KD ne vise pas la précision mais la robustesse basse-densité.",NAVY]];
+const find=[["H1 est réfutée","Aucune variante de KD (logits, features, teacher dense ou robuste, deux α) ne bat le simple sous-échantillonnage à l'entraînement.",CORAL],
+  ["Pourquoi : le teacher n'en sait jamais plus","Petit dataset (1158 nodules) → la capacité du teacher sur-apprend ; il n'a rien à transférer au-delà de ce que le student apprend seul.",TEAL],
+  ["Le seuil dépend de la densité","L'AUC survit, mais la balanced accuracy tombe à 0.5 en basse densité (tout « bénin ») pour les modèles denses, et inversement → calibrer le seuil par N.",NAVY]];
 find.forEach((f,i)=>{ const y=1.65+i*1.62; card(s,0.6,y,12.1,1.45,i==1?TINT2:TINT);
   s.addText((i+1),{x:0.95,y:y+0.28,w:0.9,h:0.9,align:"center",valign:"middle",fontFace:HF,fontSize:30,bold:true,color:f[2],isTextBox:true,margin:0});
   s.addText(f[0],{x:2.0,y:y+0.17,w:10.4,h:0.5,fontFace:HF,fontSize:18,bold:true,color:INK,isTextBox:true,margin:0});
   s.addText(f[1],{x:2.0,y:y+0.65,w:10.5,h:0.72,fontFace:BF,fontSize:14,color:"33474F",isTextBox:true,margin:0,lineSpacingMultiple:1.03});});
-s.addNotes("Analyse honnête incluant le résultat inattendu (student ~ teacher). Le point important: le teacher est plus robuste en sparsité, ce qui motive et recadre l'hypothèse de KD.");
+s.addNotes("Résultat négatif propre et défendable. Bonus: le sous-échantillonnage régularise aussi à pleine densité (+0.03 AUC). Et un problème pratique mis en évidence: le seuil de décision n'est valable que pour une densité.");
 
-// ============== S9 Second half ==============
-s = p.addSlide(); s.background={color:WHITE}; title(s,"Deuxième moitié — la distillation");
-const kd=[["KD logit (Hinton)","α·CE + (1-α)·KL(z_s/T ‖ z_t/T), teacher gelé"],
-  ["KD robuste (idée originale)","teacher voit le nuage dense, student voit un nuage sous-échantillonné → apprend la sparsité"],
-  ["KD de features","aligner le vecteur global g (déjà exposé par le modèle)"],
-  ["Comparaison & test de H1","courbes student_KD vs scratch vs teacher ; conclure (même si H1 infirmée)"]];
-kd.forEach((k,i)=>{ const x=0.6+(i%2)*6.2, y=1.7+Math.floor(i/2)*2.35; card(s,x,y,5.9,2.05,i<2?TINT:TINT2);
-  numCircle(s,x+0.3,y+0.3,0.62,i+1,i<2?TEAL:CORAL);
+// ============== S13 Limits & perspectives ==============
+s = p.addSlide(); s.background={color:WHITE}; title(s,"Limites & perspectives");
+const lp=[["Taille du nodule effacée","la normalisation à la boule unité supprime la taille (indice clé de malignité) → AUC plafonnée ~0.8"],
+  ["Puissance statistique","310 nodules test, 5 seeds : un effet KD de ±0.01 resterait indétectable"],
+  ["Un teacher vraiment supérieur","CNN 3D sur voxels distillé vers le student nuage de points (KD cross-modale)"],
+  ["Seuil & sous-échantillonnage","seuil calibré par densité ; sous-échantillonnage structuré (trous locaux, coupes)"]];
+lp.forEach((k,i)=>{ const x=0.6+(i%2)*6.2, y=1.7+Math.floor(i/2)*2.35; card(s,x,y,5.9,2.05,i<2?TINT2:TINT);
+  numCircle(s,x+0.3,y+0.3,0.62,i+1,i<2?CORAL:TEAL);
   s.addText(k[0],{x:x+1.1,y:y+0.32,w:4.6,h:0.6,valign:"middle",fontFace:HF,fontSize:16.5,bold:true,color:NAVY,isTextBox:true,margin:0});
   s.addText(k[1],{x:x+0.35,y:y+1.05,w:5.2,h:0.9,fontFace:BF,fontSize:13.5,color:INK,isTextBox:true,margin:0,lineSpacingMultiple:1.05});});
-s.addNotes("Plan concret de la suite, branché sur le code existant. L'idée originale: KD robuste où le student apprend à reproduire la sortie dense du teacher à partir d'un nuage parcimonieux.");
+s.addNotes("Limites en corail, pistes en teal. La piste la plus prometteuse: une KD cross-modale depuis un modèle voxel qui a accès à de l'information que le nuage de points n'a pas.");
 
-// ============== S10 Conclusion ==============
+// ============== S14 Conclusion ==============
 s = p.addSlide(); s.background={color:DARK};
 dotMotif(s,0.3,4.3,3.0,22,TEAL,0.22);
 s.addText("Conclusion",{x:0.7,y:0.9,w:11,h:0.9,fontFace:HF,fontSize:34,bold:true,color:WHITE,isTextBox:true,margin:0});
-const concl=["Infrastructure complète + baselines établies : données → nuages de points, teacher, student, protocole de robustesse.",
-  "Le sous-échantillonnage dégrade nettement la classification (AUC 0.80 → 0.57) — mesurable et reproductible.",
-  "H1 recadrée honnêtement : la KD doit transférer la robustesse basse-densité, pas la précision.",
-  "Prochaine étape : implémenter la KD (logit / robuste / features) et comparer les courbes."];
+const concl=["Le sous-échantillonnage dégrade nettement la classification (AUC ~0.77 → ~0.59 pour les modèles denses).",
+  "Entraîner sur des nuages parcimonieux le corrige : +0.03 → +0.08 AUC, à toutes les densités.",
+  "La distillation n'ajoute rien au-delà de cette augmentation : H1 réfutée, avec le bon témoin.",
+  "Leçon : une KD n'aide que si le teacher sait quelque chose que le student ne peut pas apprendre seul."];
 s.addText(concl.map(t=>({text:t,options:{bullet:{code:"2022",indent:20},breakLine:true,paraSpaceAfter:13,color:"E6F2F3"}})),
   {x:0.75,y:2.1,w:11.7,h:3.8,fontFace:BF,fontSize:17,isTextBox:true,margin:0,lineSpacingMultiple:1.06});
-s.addText("Code reproductible : src/ · run_half.py · notebooks/01_pointclouds_robustness.ipynb",
+s.addText("Code reproductible : src/ · prepare_data.py · run_seeds.py · run_kd.py · run_robust_teacher.py · notebook",
   {x:0.75,y:6.55,w:12,h:0.5,fontFace:BF,fontSize:13,color:"9FC2C8",isTextBox:true,margin:0});
-s.addNotes("Résumé: la moitié du projet livre toute l'infrastructure et les baselines. Le phénomène de robustesse est établi, l'hypothèse recadrée, et la KD est la suite.");
+s.addNotes("Résumé: résultat négatif mais rigoureux. La méthodologie (5 seeds, tests appariés, témoin aug) est ce qui permet de l'affirmer.");
 
 p.writeFile({fileName:"KD_pointcloud_presentation.pptx"}).then(f=>console.log("wrote",f));

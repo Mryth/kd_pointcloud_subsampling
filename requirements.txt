@@ -1,0 +1,25 @@
+cloudpickle==3.1.2
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.67.0
+joblib==1.6.0
+kiwisolver==1.5.1
+matplotlib==3.11.2
+narwhals==2.27.1
+numpy==2.5.4
+packaging==26.3
+pillow==13.0.0
+pyparsing==3.3.3
+python-dateutil==2.9.0.post0
+scikit-learn==1.9.1
+scipy==1.18.1
+six==1.17.0
+threadpoolctl==3.7.0
+tqdm==4.70.1
+
+# imported in src/*.py and notebooks/01_pointclouds_robustness.ipynb but not
+# installed in this venv, so versions aren't pinned to a frozen baseline here.
+# Checkpoints in models/*.pt are saved via state_dict (run_half.py), so any
+# reasonably recent torch 2.x can load them -- no strict version lock needed.
+torch>=2.2
+pandas>=2.0

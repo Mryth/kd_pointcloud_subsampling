@@ -62,3 +62,25 @@ def robustness_curve(model, test_ds, n_points_list):
         m = evaluate(model, test_ds)
         rows.append({"n_points": n, **m})
     return rows
+
+
+def robustness_curve_multi(model, test_ds, n_points_list, n_draws=5):
+    """Like `robustness_curve`, but averages each metric over `n_draws` random sub-samples
+    (removes the luck of one particular subset of points)."""
+    rows = []
+    for n in n_points_list:
+        test_ds.set_n_points(n)
+        ms = []
+        for k in range(n_draws):
+            test_ds.rng = np.random.default_rng(k)
+            ms.append(evaluate(model, test_ds))
+        rows.append({"n_points": n, **{key: float(np.mean([m[key] for m in ms])) for key in ms[0]}})
+    return rows
+
+
+def bootstrap_ci(values, n_boot=10000, alpha=0.05, seed=0):
+    """Mean and percentile-bootstrap (1-alpha) CI of the mean of `values` (e.g. one AUC per seed)."""
+    v = np.asarray(values, dtype=float)
+    rng = np.random.default_rng(seed)
+    means = rng.choice(v, size=(n_boot, len(v)), replace=True).mean(1)
+    return float(v.mean()), float(np.quantile(means, alpha / 2)), float(np.quantile(means, 1 - alpha / 2))

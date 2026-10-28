@@ -42,9 +42,10 @@ than the *same* student trained the ordinary way (plain cross-entropy).
 Why it's a good question: it's **specific** (robustness, not just accuracy), **falsifiable**
 (we can plot a curve and check), and **practically motivated** (sparse medical scans are real).
 
-> ⚠️ **We've done the FIRST HALF**: the data pipeline, the models, and the robustness
-> *baselines* (teacher and from-scratch student). The KD itself + the comparison is the second
-> half (planned at the end).
+> ✅ **The project is complete.** Sections 4–9 cover the first half (data, models, baselines);
+> sections 10–14 cover the second half (statistics over 5 seeds, the distillation itself, and
+> the final verdict). **Spoiler: H1 is refuted** — and section 12 explains why that is a good,
+> defensible result.
 
 ---
 
@@ -61,6 +62,9 @@ Teacher (0.8M params)  &  Student-from-scratch (54k params)
         │   at TEST time: keep only N random points  (N = 1024…16)
         ▼
 Robustness curve: accuracy (AUC) vs number of points
+        │   second half: repeat on 5 seeds + train distilled students
+        ▼
+Compare: KD students  vs  scratch  vs  "aug" control (same sparse inputs, no teacher)
 ```
 
 Everything after the point-cloud step is "just" normal deep-learning on a table of numbers —
@@ -164,6 +168,9 @@ ROC-AUC as we remove points:
 
 (Plot: `presentation/assets/robustness_curves.png`.)
 
+> ⚠️ These are **single-seed** numbers. Section 10 shows that some of them do not survive
+> re-running with other seeds — read section 9 as "what we believed after the first half".
+
 ---
 
 ## 9. What the results mean (critical analysis)
@@ -190,28 +197,127 @@ sits next to a healthy 0.791 AUC; the AUC is the trustworthy number).
 
 ---
 
-## 10. Done vs. to-do
+## 10. Second half, step 1 — are the first-half numbers real? (5 seeds)
 
-**Done (this half):**
-- ✅ Data pipeline: CT volumes → intensity-weighted point clouds + sub-sampling utilities.
-- ✅ Two PointNet models (teacher, student) with justified design.
-- ✅ The robustness-to-sub-sampling **protocol and baseline curves**.
-- ✅ Honest critical analysis (including the surprise) + reproducible code and a saved plot.
+A single training run depends on luck: the random initial weights, the order of the batches,
+which points get dropped. With only 310 test nodules (~64 malignant), that luck alone moves the
+AUC by ~0.02 — the same size as the effects we were discussing. So before any KD we re-trained
+teacher and student on **5 seeds** (`run_seeds.py`) and averaged each point of the curve over
+5 random sub-samples. We report **mean ± std** and a **95 % confidence interval**.
 
-**To do (second half — the KD):**
-1. **Logit KD (Hinton):** student loss `= α·CE + (1-α)·KL(softmax(z_s/T) ‖ softmax(z_t/T))`,
-   teacher frozen (temperature `T`, mix `α`).
-2. **"Robust KD" (our original twist):** feed the **teacher the dense cloud** but the
-   **student a sub-sampled cloud**, and make the student match the teacher's dense prediction —
-   so it explicitly learns to be right with few points.
-3. **Feature KD:** also align the student's global vector `g` with the teacher's (our models
-   already return `g`, so this is ready).
-4. **Compare** `student_KD` vs `student_scratch` vs `teacher` robustness curves → **test H1**
-   and conclude, even if H1 is not confirmed.
+| # points | Teacher | Student-scratch |
+|---:|:---:|:---:|
+| 1024 | 0.765 ± 0.008 | 0.770 ± 0.028 |
+| 128 | 0.720 ± 0.029 | 0.710 ± 0.020 |
+| 32 | 0.671 ± 0.030 | 0.640 ± 0.019 |
+| 16 | 0.605 ± 0.030 | 0.573 ± 0.021 |
+
+What changed vs. section 9:
+- The "student beats teacher" surprise **disappears**: they are equal at full density. The
+  student is just ~3× more unstable from seed to seed.
+- The teacher's robustness advantage is **small** and only clear at ≤ 32 points.
+
+Lesson: *one seed is an anecdote, not a result.*
 
 ---
 
-## 11. Where everything lives
+## 11. Second half, step 2 — the distillation variants
+
+All variants live in one training loop (`src/kd.py`). In plain words:
+
+| variant | what the student learns from |
+|---|---|
+| **scratch** | the labels only, on dense clouds |
+| **aug** (the *control*) | the labels only, but on **randomly thinned** clouds (16–1024 points each batch) — **no teacher** |
+| **kd** (Hinton) | labels + the teacher's "soft" probabilities, on dense clouds |
+| **kd_robust** (our idea) | labels + the teacher's soft probabilities — the teacher sees the **dense** cloud, the student a **thinned** one |
+| **kd_robust_feat** | same + copy the teacher's internal global vector `g` |
+| **kd_robust_rt** | same as kd_robust, but from a **robust teacher** (itself trained on thinned clouds) |
+
+**Why the `aug` control is essential.** `kd_robust` changes *two* things at once compared to
+scratch: the student sees thinned clouds (an augmentation) **and** it gets the teacher's
+targets. If kd_robust wins, which of the two did it? `aug` has the first ingredient without the
+second. So: **kd_robust − aug = the real contribution of the teacher.**
+
+**Soft probabilities, temperature T, weight α.** The teacher doesn't just say "malignant"; it
+says "72 % malignant". Dividing the logits by a temperature `T` softens these probabilities so
+the student sees more of the teacher's nuance; `α` balances "match the labels" vs "match the
+teacher". We picked `T = 2, α = 0.7` on the **validation** set (never the test set); all 9
+settings tried were within 0.83–0.85 val AUC, so the choice barely matters.
+
+**Fair comparison.** Every variant is trained on the same 5 seeds (seed *s* distils from the
+teacher of seed *s*) and picks its best epoch with the same rule. Comparisons are **paired**:
+for each seed we compute "variant A − variant B", then test whether that difference is zero.
+
+---
+
+## 12. The results of the second half — and the verdict
+
+Test ROC-AUC, mean over 5 seeds:
+
+| # points | teacher | scratch | **aug** | kd | **kd_robust** | kd_robust_rt |
+|---:|:-:|:-:|:-:|:-:|:-:|:-:|
+| 1024 | 0.765 | 0.763 | 0.791 | 0.779 | 0.793 | 0.794 |
+| 128 | 0.720 | 0.714 | 0.779 | 0.739 | 0.778 | 0.775 |
+| 64 | 0.668 | 0.660 | 0.743 | 0.673 | 0.740 | 0.739 |
+| 16 | 0.605 | 0.585 | 0.648 | 0.582 | 0.643 | 0.652 |
+
+(Plots: `robustness_curves_kd.png`, `robustness_curves_robust_teacher.png`.)
+(Scratch here is 0.763, not 0.770 as in section 10: it was re-trained with the same
+epoch-selection rule as the KD variants, so that every column is comparable.)
+
+**① KD robust looks like a big win…** vs scratch: **+0.03 to +0.08 AUC**, on 5 seeds out of 5,
+p ≤ 0.01. If we had stopped here, we would have announced "KD works".
+
+**② …but the control does exactly the same.** `kd_robust − aug` ≈ **0** at every density
+(at most ±0.004, p ≥ 0.69). The teacher adds **nothing measurable**. The robustness comes
+entirely from **training on thinned clouds**. Feature KD and Hinton KD don't help either.
+
+**③ Even a robust teacher doesn't help.** Natural objection: "the dense teacher had no
+robustness to give". So we made the teacher robust. Result: the 0.8M robust teacher is still
+slightly **worse** than the 54k `aug` student (it wins 0 of 5 seeds at 64 points). Distilling
+from it gives ≈ 0 gain; trusting it more (α = 0.3) makes the student *worse*.
+
+**→ Verdict: H1 is refuted.** And we can say *why*: knowledge distillation can only transfer
+what the teacher knows *beyond* the student. With 1158 training nodules, the big teacher just
+overfits — it never knows more than the small student trained the right way.
+
+**Two side findings worth remembering:**
+- **Thinning regularises.** `aug` is better even at full density (+0.03): randomly dropping
+  points acts like dropout.
+- **The decision threshold depends on the density.** The AUC (how well the model *ranks*
+  patients) survives thinning, but at ≤ 64 points the dense-trained models predict "benign" for
+  everyone (balanced accuracy 0.5) — fewer points ⇒ smaller max-pooled values ⇒ shifted logits.
+  Models trained on thinned clouds have the opposite problem at 1024 points. A real system
+  would need a threshold calibrated per density.
+
+---
+
+## 13. Limits and what we would do next
+
+- **We erased nodule size.** Scaling every cloud to the unit ball removes the nodule's size —
+  one of the strongest malignancy cues for radiologists. Likely why every model caps near
+  AUC 0.8. Fix: normalise with a fixed constant, or add the radius as a feature.
+- **Small test set.** 310 nodules and 5 seeds: a real but tiny KD effect (±0.01) would be
+  invisible.
+- **A teacher that truly knows more.** The promising version of this project: a 3D CNN on the
+  full voxel grid (more information than any point cloud) distilled into the point-cloud
+  student — *cross-modal* KD.
+- **Structured thinning** (holes, missing slices) instead of only random point removal.
+
+---
+
+## 14. Done
+
+- ✅ Data pipeline, now fully reproducible (`prepare_data.py` rebuilds the clouds bit-for-bit).
+- ✅ Teacher / student baselines, single seed (first half) and 5 seeds (second half).
+- ✅ Six training variants incl. the `aug` control and a robust teacher.
+- ✅ Statistics: mean ± std, bootstrap CIs, paired tests.
+- ✅ Honest conclusion: H1 refuted, with the reason and the limits.
+
+---
+
+## 15. Where everything lives
 
 ```
 kd_pointcloud_subsampling/
@@ -221,17 +327,24 @@ kd_pointcloud_subsampling/
 ├── src/
 │   ├── data.py      # volumes → point clouds + sub-sampling Dataset
 │   ├── models.py    # scalable PointNet (teacher / student)
-│   └── engine.py    # train / evaluate / robustness_curve
-├── run_half.py                    # one script: trains both + saves curves/plot/json
+│   ├── engine.py    # train / evaluate / robustness curves / bootstrap CI
+│   └── kd.py        # all KD variants + the aug control
+├── prepare_data.py                # rebuilds processed_clouds.npz
+├── run_half.py                    # first half: one seed, teacher + student
+├── run_seeds.py                   # baselines on 5 seeds
+├── run_kd.py                      # (T, α) sweep + 5 student variants × 5 seeds
+├── run_robust_teacher.py          # robust teacher + distilled students
 ├── notebooks/01_pointclouds_robustness.ipynb   # narrated, reproducible (FR)
-├── models/teacher.pt, student_scratch.pt
-├── results.json, robustness_curves.png
+├── models/teacher.pt, student_scratch.pt  (+ per-seed *_s{0..4}.pt, not versioned)
+├── results*.json, robustness_curves*.png
 ├── presentation/                  # deck + assets + PROMPT.md (see that folder)
 ├── README.md                      # terse reference
 └── explain.md                     # this file
 ```
 
-**To reproduce the numbers:** run `run_half.py` (or the notebook) with the GPU torch
-environment. The dataset is already downloaded; nothing else needs the network.
+**To reproduce the numbers:** create the venv (`uv venv .venv && uv pip install --python
+.venv/bin/python -r requirements.txt`), then run `run_seeds.py` → `run_kd.py` →
+`run_robust_teacher.py` (~35 min in total on a GTX 1650). The dataset is already downloaded;
+nothing else needs the network.
 
 *(Written in English to match the README; happy to give a French version for the report.)*
